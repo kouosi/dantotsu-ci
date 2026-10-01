@@ -87,12 +87,50 @@ jobs:
           find src/app/build/outputs/apk -name '*.apk' -exec cp {} out/ \;
           cd out
           ls -lh
-          sha256sum *.apk | tee SHA256SUMS.txt
+          # sha256sum *.apk | tee SHA256SUMS.txt
+          for f in *.apk; do sha256sum "$f" > "${f%.apk}.sha256"; done
 
-      - name: Upload APK artifact
+      - name: Upload artifact (universal)
         uses: actions/upload-artifact@v4
         with:
-          name: Dantotsu-${{ env.VERSION }}-${{ env.FLAVOR }}-${{ env.BUILD_TYPE }}
-          path: out/*
+          name: Dantotsu-${{ env.VERSION }}-${{ env.FLAVOR }}-${{ env.BUILD_TYPE }}-universal
+          path: out/app-${{ env.FLAVOR }}-universal-${{ env.BUILD_TYPE }}.*
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload artifact (arm64-v8a)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dantotsu-${{ env.VERSION }}-${{ env.FLAVOR }}-${{ env.BUILD_TYPE }}-arm64-v8a
+          path: out/app-${{ env.FLAVOR }}-arm64-v8a-${{ env.BUILD_TYPE }}.*
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload artifact (armeabi-v7a)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dantotsu-${{ env.VERSION }}-${{ env.FLAVOR }}-${{ env.BUILD_TYPE }}-armeabi-v7a
+          path: out/app-${{ env.FLAVOR }}-armeabi-v7a-${{ env.BUILD_TYPE }}.*
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload artifact (x86)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dantotsu-${{ env.VERSION }}-${{ env.FLAVOR }}-${{ env.BUILD_TYPE }}-x86
+          path: out/app-${{ env.FLAVOR }}-x86-${{ env.BUILD_TYPE }}.*
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload artifact (x86_64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dantotsu-${{ env.VERSION }}-${{ env.FLAVOR }}-${{ env.BUILD_TYPE }}-x86_64
+          path: out/app-${{ env.FLAVOR }}-x86_64-${{ env.BUILD_TYPE }}.*
+          compression-level: 0
           retention-days: 14
           if-no-files-found: error
