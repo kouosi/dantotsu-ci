@@ -1,0 +1,98 @@
+name: Build Dantotsu
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch of the upstream repo to build"
+        required: true
+        default: dev
+      flavor:
+        description: "Product flavor"
+        required: true
+        default: google
+        type: choice
+        options: [google, fdroid]
+      build_type:
+        description: "Build type"
+        required: true
+        default: alpha
+        type: choice
+        options: [alpha, debug]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UPSTREAM_REPO: https://git.rebelonion.dev/rebelonion/Dantotsu
+  GRADLE_EXTRA_ARGS: "" # Extra Gradle flags for testing
+  BUILD_TOOLS_VERSION: "36.0.0"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      BRANCH: ${{ inputs.branch || 'dev' }}
+      FLAVOR: ${{ inputs.flavor || 'google' }}
+      BUILD_TYPE: ${{ inputs.build_type || 'alpha' }}
+      CI: true
+
+    steps:
+      - name: Clone upstream (${{ env.BRANCH }})
+        run: |
+          git clone --depth 1 --branch "$BRANCH" "$UPSTREAM_REPO" src
+          cd src
+          SHA=$(git rev-parse HEAD)
+          VER=$(grep -E -o 'baseVersion = ".*"' app/build.gradle.kts | sed 's/baseVersion = //' | tr -d '"')
+          echo "COMMIT_HASH=$SHA" >> "$GITHUB_ENV"
+          echo "VERSION=${VER}+${SHA:0:7}" >> "$GITHUB_ENV"
+          echo "Building $UPSTREAM_REPO@$BRANCH ($SHA), version ${VER}+${SHA:0:7}"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK packages
+        run: |
+          COMPILE_SDK=$(grep -E -o 'compileSdk = [0-9]+' src/app/build.gradle.kts | grep -E -o '[0-9]+')
+          PKGS="platforms;android-${COMPILE_SDK}.0 build-tools;${BUILD_TOOLS_VERSION}"
+          echo "Installing: $PKGS"
+          for i in 1 2 3; do
+            sdkmanager --install $PKGS > /tmp/sdk.log 2>&1 && ! grep -q 'failed' /tmp/sdk.log && break
+            tail -5 /tmp/sdk.log; echo "Attempt $i failed, retrying..."; sleep 10
+          done
+          sdkmanager --list_installed 2>/dev/null | grep -E 'build-tools|platforms'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build APK
+        working-directory: src
+        run: |
+          chmod +x ./gradlew
+          TASK="assemble${FLAVOR^}${BUILD_TYPE^}"
+          echo "Running ./gradlew $TASK"
+          ./gradlew "$TASK" --no-daemon --stacktrace $GRADLE_EXTRA_ARGS
+
+      - name: Collect APKs
+        run: |
+          mkdir -p out
+          find src/app/build/outputs/apk -name '*.apk' -exec cp {} out/ \;
+          cd out
+          ls -lh
+          sha256sum *.apk | tee SHA256SUMS.txt
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dantotsu-${{ env.VERSION }}-${{ env.FLAVOR }}-${{ env.BUILD_TYPE }}
+          path: out/*
+          retention-days: 14
+          if-no-files-found: error
